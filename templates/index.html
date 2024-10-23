@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>기하학 패턴 기억하기 게임</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        .pattern {
+            width: 50px;
+            height: 50px;
+            display: inline-block;
+            margin: 5px;
+        }
+        .circle {
+            background-color: blue;
+            border-radius: 50%;
+        }
+        .square {
+            background-color: red;
+        }
+        .triangle {
+            width: 0;
+            height: 0;
+            border-left: 25px solid transparent;
+            border-right: 25px solid transparent;
+            border-bottom: 50px solid green;
+            margin: 5px;
+        }
+        .rectangle {
+            background-color: orange;
+            width: 70px;
+            height: 30px;
+        }
+        .hidden { display: none; }
+        .removable { cursor: pointer; }
+        .disabled { pointer-events: none; opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>기하학 패턴 기억하기 게임</h1>
+        <div id="score">점수: 0</div>
+        <div id="coins">코인: 0</div>
+        <div id="lives">생명: 6</div>
+        <button id="startGame" class="btn btn-primary">게임 시작</button>
+        <div id="patternArea" class="hidden"></div>
+        <div id="inputArea" class="hidden">
+            <h3>도형 선택하기</h3>
+            <div id="shapeButtons"></div>
+            <div id="userPatterns" class="mt-2"></div>
+            <button id="submitInput" class="btn btn-success">제출</button>
+        </div>
+        <div id="result" class="hidden"></div>
+    </div>
+
+    <script>
+        let score = 0;
+        let coins = 0;
+        let lives = 6;
+        let currentPattern = [];
+        let userPattern = [];
+        let patternLength = 3;  // 초기 패턴 길이 3으로 고정
+        let roundNum = 1;  // 라운드 초기화
+
+        const startGame = () => {
+            score = 0;
+            coins = 0;
+            lives = 6;
+            roundNum = 1;
+            patternLength = 3;  // 패턴 길이 다시 3으로 초기화
+            updateLives();
+            showPattern();
+        };
+
+        const showPattern = () => {
+            const patternArea = document.getElementById('patternArea');
+            patternArea.innerHTML = '';
+            fetch('/generate_pattern')
+                .then(response => response.json())
+                .then(pattern => {
+                    currentPattern = pattern;
+                    currentPattern.forEach(shape => {
+                        const div = document.createElement('div');
+                        div.className = `pattern ${shape} disabled`;
+                        patternArea.appendChild(div);
+                    });
+                    patternArea.classList.remove('hidden');
+                    setTimeout(() => {
+                        patternArea.classList.add('hidden');
+                        showInput();
+                    }, 3000);  // 패턴 보여주는 시간
+                });
+        };
+
+        const showInput = () => {
+            const inputArea = document.getElementById('inputArea');
+            inputArea.classList.remove('hidden');
+            document.getElementById('result').classList.add('hidden');
+            document.getElementById('submitInput').disabled = false;
+            createShapeButtons();
+            displayUserPatterns();
+        };
+
+        const createShapeButtons = () => {
+            const shapeButtons = document.getElementById('shapeButtons');
+            shapeButtons.innerHTML = '';
+            const shapes = {
+                'circle': '원',
+                'square': '사각형',
+                'triangle': '삼각형',
+                'rectangle': '직사각형'
+            };
+            Object.keys(shapes).forEach(shape => {
+                const button = document.createElement('button');
+                button.className = 'btn btn-outline-primary shape-button';
+                button.innerHTML = shapes[shape];
+                button.onclick = () => selectShape(shape);
+                shapeButtons.appendChild(button);
+            });
+        };
+
+        const selectShape = (shape) => {
+            userPattern.push(shape);
+            displayUserPatterns();
+        };
+
+        const displayUserPatterns = () => {
+            const userPatternsDiv = document.getElementById('userPatterns');
+            userPatternsDiv.innerHTML = '';
+            userPattern.forEach((shape, index) => {
+                const div = document.createElement('div');
+                div.className = `pattern ${shape} removable`;
+                div.onclick = () => removeShape(index);
+                userPatternsDiv.appendChild(div);
+            });
+        };
+
+        const removeShape = (index) => {
+            userPattern.splice(index, 1);
+            displayUserPatterns();
+        };
+
+        const checkPattern = () => {
+            document.getElementById('submitInput').disabled = true;
+            fetch('/check_pattern', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userPattern: userPattern,
+                    correctPattern: currentPattern
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                const result = document.getElementById('result');
+                if (data.is_correct) {
+                    score += 1;
+                    coins += 10;
+                    result.innerHTML = "정답입니다! 점수: " + score + ", 코인: " + coins;
+                    increaseDifficulty();
+                } else {
+                    lives -= 1;
+                    result.innerHTML = `틀렸습니다! 시도한 패턴: ${userPattern.join(', ')}, 정답: ${currentPattern.join(', ')}`;
+                }
+                updateLives();
+
+                if (lives <= 0) {
+                    result.innerHTML += "<br/>게임 종료! 최종 점수: " + score;
+                    document.getElementById('startGame').disabled = false;
+                    document.getElementById('inputArea').classList.add('hidden');
+                } else {
+                    setTimeout(() => {
+                        userPattern = [];
+                        showPattern();
+                    }, 2000);
+                }
+
+                result.classList.remove('hidden');
+            });
+        };
+
+        const increaseDifficulty = () => {
+            fetch('/update_difficulty', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                roundNum = data.round;
+                patternLength = data.pattern_length;
+            });
+        };
+
+        const updateLives = () => {
+            document.getElementById('lives').innerText = "생명: " + lives;
+            document.getElementById('score').innerText = "점수: " + score;
+            document.getElementById('coins').innerText = "코인: " + coins;
+        };
+
+        document.getElementById('startGame').onclick = () => {
+            startGame();
+            document.getElementById('startGame').disabled = true;
+        };
+
+        document.getElementById('submitInput').onclick = () => {
+            checkPattern();
+        };
+    </script>
+</body>
+</html>
